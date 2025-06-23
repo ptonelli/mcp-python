@@ -1,9 +1,9 @@
 # Use Python 3.10 as base image
 FROM python:3.10-slim
 
-# Add useful command line tools
+# Add useful command line tools and gosu for step-down from root
 RUN apt-get update && \
-    apt-get install -y curl wget git jq zip unzip rsync tree telnet netcat-traditional && \
+    apt-get install -y curl wget git jq zip unzip rsync tree telnet netcat-traditional gosu && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -19,11 +19,24 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY server.py .
 
-# Set environment variables (if needed)
-ENV HOST=0.0.0.0
+# Copy entrypoint script from local context
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Expose port (FastMCP typically uses port 8000 by default)
+# Set environment variables
+ENV HOST=0.0.0.0
+ENV PORT=8000
+ENV WORKDIR=/home/projects
+# Default UID/GID (can be overridden at runtime)
+ENV UID=1000
+ENV GID=1000
+
+# Create directory for projects
+RUN mkdir -p /home/projects
+
+# Expose port
 EXPOSE 8000
 
-# Run the server
+# Set entrypoint
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["python", "server.py"]

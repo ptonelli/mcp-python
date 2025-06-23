@@ -210,17 +210,16 @@ def initialize_workspace():
     # Get list of available projects
     projects = list_projects()
     
-    # If no projects exist, create a "default" directory
+    # If no projects exist, the default directory should already exist from entrypoint
     if not projects:
-        default_dir = os.path.join(WORKDIR, "default")
-        os.makedirs(default_dir, exist_ok=True)
-        print(f"Created 'default' directory at {default_dir}")
-        os.chdir(default_dir)  # Set as active
-    else:
-        # Use the first available project
-        first_project = projects[0]
-        os.chdir(os.path.join(WORKDIR, first_project))
-        print(f"Setting '{first_project}' as the active project")
+        print("No projects found. This should not happen as entrypoint creates default.")
+        # We won't create it here as the entrypoint should have done this with proper permissions
+        return
+        
+    # Use the first available project
+    first_project = projects[0]
+    os.chdir(os.path.join(WORKDIR, first_project))
+    print(f"Setting '{first_project}' as the active project")
 
 if __name__ == "__main__":
     try:
