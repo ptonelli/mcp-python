@@ -1,6 +1,12 @@
 # Use Python 3.10 as base image
 FROM python:3.10-slim
 
+# Add useful command line tools
+RUN apt-get update && \
+    apt-get install -y curl wget git jq zip unzip rsync tree telnet netcat-traditional && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 # Set working directory
 WORKDIR /app
 

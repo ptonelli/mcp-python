@@ -99,99 +99,111 @@ def run_code(code: str) -> Dict[str, Union[str, bool]]:
 
     return result
 
-mcp.tool()
-def add_file(filename: str, content: str) -> dict:
+@mcp.tool()
+def run_file(filename: str) -> Dict[str, Union[str, bool]]:
     """
-    Create a new file with the specified content in the active project.
+    Execute a Python file and capture stdout and stderr.
     
     Args:
-        filename: The name of the file to create
-        content: The content to write to the file
-    
+        filename (str): Name of the Python file to execute in the active project
+        
     Returns:
-        Dictionary with success status and message
+        Dict[str, Union[str, bool]]: Dictionary with stdout, stderr and execution status
     """
     result = {
-        "success": False,
-        "message": ""
+        "stdout": "",
+        "stderr": "",
+        "success": True
     }
     
     file_path = os.path.join(os.getcwd(), filename)
     
+    # Check if file exists
+    if not os.path.exists(file_path):
+        result["success"] = False
+        result["stderr"] = f"Error: File '{filename}' does not exist."
+        return result
+        
+    # Check if it's a file (not a directory)
+    if not os.path.isfile(file_path):
+        result["success"] = False
+        result["stderr"] = f"Error: '{filename}' is not a file."
+        return result
+        
+    # Create a safe globals dictionary similar to run_code
+    safe_globals = {
+        "__builtins__": {
+            name: getattr(__builtins__, name)
+            for name in dir(__builtins__)
+            # Exclude potentially dangerous builtins
+            if name not in ['open', 'exec', 'eval', '__import__']
+        }
+    }
+    
+    stdout_buffer = io.StringIO()
+    stderr_buffer = io.StringIO()
+    
     try:
-        # Create directories if needed (handles nested paths)
-        os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
+        # Read the file content
+        with open(file_path, 'r') as f:
+            code = f.read()
+            
+        # Redirect both stdout and stderr to our buffers
+        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
+            exec(code, safe_globals, {})
         
-        # Check if file exists and create or overwrite accordingly
-        file_existed = os.path.exists(file_path)
-        
-        # Write the content to the file
-        with open(file_path, 'w') as f:
-            f.write(content)
-        
-        result["success"] = True
-        if file_existed:
-            result["message"] = f"File '{filename}' overwritten."
-        else:
-            result["message"] = f"File '{filename}' created successfully."
+        # Get the captured output
+        result["stdout"] = stdout_buffer.getvalue()
+        result["stderr"] = stderr_buffer.getvalue()
         
     except Exception as e:
-        result["message"] = f"Error creating file: {str(e)}"
-    
+        result["success"] = False
+        result["stderr"] = f"{stderr_buffer.getvalue()}\nException: {str(e)}"
+        
     return result
 
 @mcp.tool()
-def remove_file(filename: str) -> dict:
+def shell_exec(command: str) -> Dict[str, Union[str, bool]]:
     """
-    Remove a file from the active project.
+    Execute a shell command and return its output.
     
     Args:
-        filename: The name of the file to remove
-    
+        command (str): The shell command to execute
+        
     Returns:
-        Dictionary with success status and message
+        Dict[str, Union[str, bool]]: Dictionary with stdout, stderr and execution status
     """
+    import subprocess
+    
     result = {
-        "success": False,
-        "message": ""
+        "stdout": "",
+        "stderr": "",
+        "success": True
     }
     
-    file_path = os.path.join(os.getcwd(), filename)
-    
-    # Check if the file exists
-    if not os.path.exists(file_path):
-        result["message"] = f"File '{filename}' does not exist."
-        return result
-    
-    # Check if it's a file (not a directory)
-    if not os.path.isfile(file_path):
-        result["message"] = f"'{filename}' is not a file."
-        return result
-    
     try:
-        # Remove the file
-        os.remove(file_path)
+        # Run the command and capture output
+        process = subprocess.Popen(
+            command,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
         
-        result["success"] = True
-        result["message"] = f"File '{filename}' removed successfully."
+        # Get output and error streams
+        stdout, stderr = process.communicate()
+        
+        # Populate result
+        result["stdout"] = stdout
+        result["stderr"] = stderr
+        result["success"] = process.returncode == 0
         
     except Exception as e:
-        result["message"] = f"Error removing file: {str(e)}"
+        result["success"] = False
+        result["stderr"] = f"Error executing command: {str(e)}"
     
     return result
-
-@mcp.resource("greeting://{name}")
-def get_greeting(name: str) -> str:
-    """
-    Get a personalized greeting.
-
-    Args:
-        name (str): The name to include in the greeting.
-
-    Returns:
-        str: A personalized greeting message.
-    """
-    return f"Hello, {name}!"
 
 def initialize_workspace():
     """Initialize the workspace by setting an active project"""
