@@ -21,10 +21,12 @@ fi
 if [ ! -d "$WORKDIR/default" ]; then
     mkdir -p $WORKDIR/default
     chown -R $USER_ID:$GROUP_ID $WORKDIR
+else
+    # Check if we have write permissions to the directory
+    if [ ! -w "$WORKDIR/default" ]; then
+        echo "WARNING: The directory $WORKDIR/default exists but does not have write permissions. Operations requiring write access may fail."
+    fi
 fi
-
-# Ensure permissions on WORKDIR are correct
-chown -R $USER_ID:$GROUP_ID $WORKDIR
 
 # Run the original command as the specified user
 exec gosu $USER_ID:$GROUP_ID "$@"
