@@ -1,4 +1,10 @@
 #!/bin/bash
+n# Set up SSH keys from environment variables
+if [ -f /usr/local/bin/setup_ssh_keys.sh ]; then
+    echo "Setting up SSH keys from environment variables..."
+    /usr/local/bin/setup_ssh_keys.sh
+fi
+
 # docker-entrypoint.sh
 
 # Use default UID/GID 1000 if not specified
