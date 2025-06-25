@@ -28,36 +28,49 @@ def get_active_project() -> str:
     return os.path.basename(os.getcwd())  # Using basename instead of split[-1]
 
 @mcp.tool()
-def set_active_project(project: str) -> None:
+def set_active_project(project: str) -> dict:
     """
     Change the active project.
 
     Args:
         project (str): The name of the project to set as active.
 
-    Raises:
-        FileNotFoundError: If the specified project does not exist.
-    """
-    project_path = os.path.join(WORKDIR, project)
-    if not os.path.isdir(project_path):
-        raise FileNotFoundError(f"Project '{project}' does not exist")
-    os.chdir(project_path)
-
-@mcp.resource("projects://")
-def list_projects() -> List[str]:
-    """
-    List all directories in the workdir.
-
     Returns:
-        List[str]: A list of directory names in the workdir.
+        dict: A dictionary containing:
+            - success (bool): Whether the operation was successful
+            - message (str): An informative message about the result
+            - current_project (str): The name of the current project 
+            - error (str, optional): Error details (if unsuccessful)
     """
-    return [item for item in os.listdir(WORKDIR) 
-            if os.path.isdir(os.path.join(WORKDIR, item))]
-
-@mcp.tool()
-def run_code(code: str) -> Dict[str, Union[str, bool]]:
-    """
-    Execute Python code and capture stdout and stderr.
+    # Get the current project before any changes
+    current_project = os.path.basename(os.getcwd())
+    
+    try:
+        project_path = os.path.join(WORKDIR, project)
+        if not os.path.isdir(project_path):
+            return {
+                "success": False,
+                "message": f"Project '{project}' does not exist",
+                "current_project": current_project,
+                "error": "FileNotFoundError"
+            }
+        
+        os.chdir(project_path)
+        return {
+            "success": True,
+            "message": f"Successfully changed to project '{project}'",
+            "current_project": project
+        }
+    except Exception as e:
+        # Get the current project again after the exception
+        # (it might have changed during the attempt)
+        current_project = os.path.basename(os.getcwd())
+        return {
+            "success": False,
+            "message": f"Failed to change to project '{project}'",
+            "current_project": current_project,
+            "error": str(e)
+        }
 
     Args:
         code (str): Python code to execute
