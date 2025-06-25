@@ -1,9 +1,4 @@
 #!/bin/bash
-# Set up SSH keys from environment variables
-if [ -f /usr/local/bin/setup_ssh_keys.sh ]; then
-    echo "Setting up SSH keys from environment variables..."
-    /usr/local/bin/setup_ssh_keys.sh
-fi
 
 # docker-entrypoint.sh
 
@@ -21,6 +16,16 @@ fi
 # Create the user if it doesn't exist
 if ! getent passwd $USER_ID > /dev/null; then
     useradd -u $USER_ID -g $GROUP_ID -m -s /bin/bash mcp
+fi
+
+# Set up SSH keys from environment variables
+if [ -f /usr/local/bin/setup_ssh_keys.sh ]; then
+    echo "Setting up SSH keys from environment variables..."
+    SSH_DIR=/home/mcp/.ssh
+    mkdir -p $SSH_DIR
+    chown -R $USER_ID:$GROUP_ID "$SSH_DIR"
+    chmod 700 "$SSH_DIR"
+    gosu $USER_ID:$GROUP_ID /usr/local/bin/setup_ssh_keys.sh
 fi
 
 # Create default project directory if it doesn't exist
