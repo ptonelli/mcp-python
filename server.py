@@ -35,6 +35,22 @@ def set_active_project(project: str) -> dict:
     Args:
         project (str): The name of the project to set as active.
 
+    Raises:
+        FileNotFoundError: If the specified project does not exist.
+    """
+    project_path = os.path.join(WORKDIR, project)
+    if not os.path.isdir(project_path):
+        raise FileNotFoundError(f"Project '{project}' does not exist")
+    if not project_path.startswith(WORKDIR):
+        raise FileNotFoundError(f"Please provide a relative path")
+
+    os.chdir(project_path)
+
+@mcp.resource("projects://")
+def list_projects() -> List[str]:
+    """
+    List all directories in the workdir.
+
     Returns:
         dict: A dictionary containing:
             - success (bool): Whether the operation was successful
