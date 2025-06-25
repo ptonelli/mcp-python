@@ -14,6 +14,16 @@ PORT = int(os.environ.get("PORT", 8000))
 # Create an MCP server with environment variable configuration
 mcp = FastMCP("python", stateless_http=True, host=HOST, port=PORT, path="/python")
 
+@mcp.resource("projects://")
+def list_projects() -> List[str]:
+    """
+    List all directories in the workdir.
+
+    Returns:
+        List[str]: A list of directory names in the workdir.
+    """
+    return [item for item in os.listdir(WORKDIR)
+            if os.path.isdir(os.path.join(WORKDIR, item))]
 
 @mcp.resource("active-project://")
 def get_active_project() -> str:
@@ -35,22 +45,6 @@ def set_active_project(project: str) -> dict:
     Args:
         project (str): The name of the project to set as active.
 
-    Raises:
-        FileNotFoundError: If the specified project does not exist.
-    """
-    project_path = os.path.join(WORKDIR, project)
-    if not os.path.isdir(project_path):
-        raise FileNotFoundError(f"Project '{project}' does not exist")
-    if not project_path.startswith(WORKDIR):
-        raise FileNotFoundError(f"Please provide a relative path")
-
-    os.chdir(project_path)
-
-@mcp.resource("projects://")
-def list_projects() -> List[str]:
-    """
-    List all directories in the workdir.
-
     Returns:
         dict: A dictionary containing:
             - success (bool): Whether the operation was successful
@@ -60,7 +54,7 @@ def list_projects() -> List[str]:
     """
     # Get the current project before any changes
     current_project = os.path.basename(os.getcwd())
-    
+
     try:
         project_path = os.path.join(WORKDIR, project)
         if not os.path.isdir(project_path):
@@ -70,7 +64,15 @@ def list_projects() -> List[str]:
                 "current_project": current_project,
                 "error": "FileNotFoundError"
             }
-        
+
+        if not project_path.startswith(WORKDIR):
+            return {
+                "success": False,
+                "message": f"Please provide either a relative path or a path in {WORKDIR}",
+                "current_project": current_project,
+                "error": "Unauthorized Path"
+            }
+
         os.chdir(project_path)
         return {
             "success": True,
@@ -87,6 +89,11 @@ def list_projects() -> List[str]:
             "current_project": current_project,
             "error": str(e)
         }
+
+@mcp.tool()
+def run_code(code: str) -> Dict[str, Union[str, bool]]:
+    """
+    Execute Python code and capture stdout and stderr.
 
     Args:
         code (str): Python code to execute
