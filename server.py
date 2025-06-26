@@ -38,55 +38,55 @@ def get_active_project() -> str:
     return os.path.basename(os.getcwd())  # Using basename instead of split[-1]
 
 @mcp.tool()
-def set_active_project(project: str) -> dict:
+def cd(directory: str) -> dict:
     """
-    Change the active project.
+    Change the current working directory.
 
     Args:
-        project (str): The name of the project to set as active.
+        directory (str): The directory path to change to.
 
     Returns:
         dict: A dictionary containing:
             - success (bool): Whether the operation was successful
             - message (str): An informative message about the result
-            - current_project (str): The name of the current project 
+            - current_directory (str): The name of the current directory
             - error (str, optional): Error details (if unsuccessful)
     """
-    # Get the current project before any changes
-    current_project = os.path.basename(os.getcwd())
+    # Get the current directory before any changes
+    current_directory = os.path.basename(os.getcwd())
 
     try:
-        project_path = os.path.join(WORKDIR, project)
-        if not os.path.isdir(project_path):
+        directory_path = os.path.join(WORKDIR, directory)
+        if not os.path.isdir(directory_path):
             return {
                 "success": False,
-                "message": f"Project '{project}' does not exist",
-                "current_project": current_project,
+                "message": f"Directory '{directory}' does not exist",
+                "current_directory": current_directory,
                 "error": "FileNotFoundError"
             }
 
-        if not project_path.startswith(WORKDIR):
+        if not directory_path.startswith(WORKDIR):
             return {
                 "success": False,
                 "message": f"Please provide either a relative path or a path in {WORKDIR}",
-                "current_project": current_project,
+                "current_directory": current_directory,
                 "error": "Unauthorized Path"
             }
 
-        os.chdir(project_path)
+        os.chdir(directory_path)
         return {
             "success": True,
-            "message": f"Successfully changed to project '{project}'",
-            "current_project": project
+            "message": f"Successfully changed to directory '{directory}'",
+            "current_directory": directory
         }
     except Exception as e:
-        # Get the current project again after the exception
+        # Get the current directory again after the exception
         # (it might have changed during the attempt)
-        current_project = os.path.basename(os.getcwd())
+        current_directory = os.path.basename(os.getcwd())
         return {
             "success": False,
-            "message": f"Failed to change to project '{project}'",
-            "current_project": current_project,
+            "message": f"Failed to change to directory '{directory}'",
+            "current_directory": current_directory,
             "error": str(e)
         }
 
