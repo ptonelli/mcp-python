@@ -1,6 +1,7 @@
 import io
 import os
 import sys
+import datetime
 from contextlib import redirect_stdout, redirect_stderr
 from mcp.server.fastmcp import FastMCP
 from pathlib import Path
@@ -10,6 +11,24 @@ from typing import Dict, List, Optional, Union
 WORKDIR = os.environ.get("WORKDIR", str(Path.home()))
 HOST = os.environ.get("HOST", "127.0.0.1")
 PORT = int(os.environ.get("PORT", 8000))
+
+# Environment variable to control command logging
+# Use lower() to handle case-insensitivity
+LOG_COMMANDS = os.environ.get("MCP_LOG_COMMANDS", "0").lower() in ("1", "true", "yes")
+
+def log_command(command_type, command_data, result_success=None):
+    """Log command execution to stdout if logging is enabled
+    
+    Args:
+        command_type (str): Type of command (e.g., 'shell', 'python')
+        command_data (str): The actual command that was executed
+        result_success (bool, optional): Whether the command was successful
+    """
+    if LOG_COMMANDS:
+        timestamp = datetime.datetime.now().isoformat()
+        status = f"[{'SUCCESS' if result_success else 'FAILED'}]" if result_success is not None else ""
+        print(f"[{timestamp}] [MCP-LOG] [{command_type}] {status} {command_data}", file=sys.stdout)
+        sys.stdout.flush()  # Ensure logs are flushed immediately
 
 # Create an MCP server with environment variable configuration
 mcp = FastMCP("python", stateless_http=True, host=HOST, port=PORT, path="/python")
@@ -22,6 +41,7 @@ def list_projects() -> List[str]:
     Returns:
         List[str]: A list of directory names in the workdir.
     """
+    log_command("resource", "list_projects")
     return [item for item in os.listdir(WORKDIR)
             if os.path.isdir(os.path.join(WORKDIR, item))]
 
@@ -33,6 +53,7 @@ def get_active_project() -> str:
     Returns:
         str: The name of the active project or a message indicating no active project.
     """
+    log_command("resource", "get_active_project")
     if os.getcwd() == WORKDIR:
         return "No active project"
     return os.path.basename(os.getcwd())  # Using basename instead of split[-1]
@@ -52,43 +73,53 @@ def cd(directory: str) -> dict:
             - current_directory (str): The name of the current directory
             - error (str, optional): Error details (if unsuccessful)
     """
+    log_command("cd", f"directory={directory}")
+    
     # Get the current directory before any changes
     current_directory = os.path.basename(os.getcwd())
 
     try:
         directory_path = os.path.join(WORKDIR, directory)
         if not os.path.isdir(directory_path):
-            return {
+            result = {
                 "success": False,
                 "message": f"Directory '{directory}' does not exist",
                 "current_directory": current_directory,
                 "error": "FileNotFoundError"
             }
+            log_command("cd", f"directory={directory}", False)
+            return result
 
         if not directory_path.startswith(WORKDIR):
-            return {
+            result = {
                 "success": False,
                 "message": f"Please provide either a relative path or a path in {WORKDIR}",
                 "current_directory": current_directory,
                 "error": "Unauthorized Path"
             }
+            log_command("cd", f"directory={directory}", False)
+            return result
 
         os.chdir(directory_path)
-        return {
+        result = {
             "success": True,
             "message": f"Successfully changed to directory '{directory}'",
             "current_directory": directory
         }
+        log_command("cd", f"directory={directory}", True)
+        return result
     except Exception as e:
         # Get the current directory again after the exception
         # (it might have changed during the attempt)
         current_directory = os.path.basename(os.getcwd())
-        return {
+        result = {
             "success": False,
             "message": f"Failed to change to directory '{directory}'",
             "current_directory": current_directory,
             "error": str(e)
         }
+        log_command("cd", f"directory={directory}", False)
+        return result
 
 @mcp.tool()
 def run_code(code: str) -> Dict[str, Union[str, bool]]:
@@ -101,6 +132,11 @@ def run_code(code: str) -> Dict[str, Union[str, bool]]:
     Returns:
         Dict[str, Union[str, bool]]: Dictionary with stdout, stderr and execution status
     """
+    # Log the code execution (truncate long code snippets for the log)
+    code_preview = (code[:100] + '...') if len(code) > 100 else code
+    code_preview = code_preview.replace('\n', ' ').strip()
+    log_command("python", f"code=\"{code_preview}\"")
+    
     stdout_buffer = io.StringIO()
     stderr_buffer = io.StringIO()
 
@@ -128,10 +164,12 @@ def run_code(code: str) -> Dict[str, Union[str, bool]]:
         # Get the captured output
         result["stdout"] = stdout_buffer.getvalue()
         result["stderr"] = stderr_buffer.getvalue()
+        log_command("python", f"code=\"{code_preview}\"", True)
 
     except Exception as e:
         result["success"] = False
         result["stderr"] = f"{stderr_buffer.getvalue()}\nException: {str(e)}"
+        log_command("python", f"code=\"{code_preview}\"", False)
 
     return result
 
@@ -146,6 +184,8 @@ def run_file(filename: str) -> Dict[str, Union[str, bool]]:
     Returns:
         Dict[str, Union[str, bool]]: Dictionary with stdout, stderr and execution status
     """
+    log_command("python_file", f"filename={filename}")
+    
     result = {
         "stdout": "",
         "stderr": "",
@@ -158,12 +198,14 @@ def run_file(filename: str) -> Dict[str, Union[str, bool]]:
     if not os.path.exists(file_path):
         result["success"] = False
         result["stderr"] = f"Error: File '{filename}' does not exist."
+        log_command("python_file", f"filename={filename}", False)
         return result
         
     # Check if it's a file (not a directory)
     if not os.path.isfile(file_path):
         result["success"] = False
         result["stderr"] = f"Error: '{filename}' is not a file."
+        log_command("python_file", f"filename={filename}", False)
         return result
         
     # Create a safe globals dictionary similar to run_code
@@ -191,10 +233,12 @@ def run_file(filename: str) -> Dict[str, Union[str, bool]]:
         # Get the captured output
         result["stdout"] = stdout_buffer.getvalue()
         result["stderr"] = stderr_buffer.getvalue()
+        log_command("python_file", f"filename={filename}", True)
         
     except Exception as e:
         result["success"] = False
         result["stderr"] = f"{stderr_buffer.getvalue()}\nException: {str(e)}"
+        log_command("python_file", f"filename={filename}", False)
         
     return result
 
@@ -209,6 +253,8 @@ def shell_exec(command: str) -> Dict[str, Union[str, bool]]:
     Returns:
         Dict[str, Union[str, bool]]: Dictionary with stdout, stderr and execution status
     """
+    log_command("shell", f"command=\"{command}\"")
+    
     import subprocess
     
     result = {
@@ -234,15 +280,19 @@ def shell_exec(command: str) -> Dict[str, Union[str, bool]]:
         result["stdout"] = stdout
         result["stderr"] = stderr
         result["success"] = process.returncode == 0
+        log_command("shell", f"command=\"{command}\"", result["success"])
         
     except Exception as e:
         result["success"] = False
         result["stderr"] = f"Error executing command: {str(e)}"
+        log_command("shell", f"command=\"{command}\"", False)
     
     return result
 
 def initialize_workspace():
     """Initialize the workspace by setting an active project"""
+    log_command("system", "initialize_workspace")
+    
     # Get list of available projects
     projects = list_projects()
     
@@ -259,10 +309,14 @@ def initialize_workspace():
 
 if __name__ == "__main__":
     try:
+        # Log startup information
+        print(f"Command logging is {'ENABLED' if LOG_COMMANDS else 'DISABLED'}")
+        
         initialize_workspace()
         print(f"Starting MCP server on {HOST}:{PORT}")
         print(f"Active project: {get_active_project()}")
         mcp.run(transport="streamable-http")
     except KeyboardInterrupt:
         print("\nShutting down MCP server...")
+        log_command("system", "shutdown", True)
         sys.exit(0)
