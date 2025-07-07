@@ -386,7 +386,7 @@ def shell_exec(command: str, auto_env: bool = True) -> Dict[str, Union[str, bool
         venv_path = detect_venv()
         if venv_path:
             log_command("shell", f"Virtual environment detected at {venv_path}, using shell_exec_with_venv")
-            return shell_with_venv(venv_path, command)
+            return shell_exec_with_venv(venv_path, command)
     
     # Original shell_exec implementation
     import subprocess
