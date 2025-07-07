@@ -243,19 +243,54 @@ def run_file(filename: str) -> Dict[str, Union[str, bool]]:
     return result
 
 @mcp.tool()
-def shell_exec(command: str) -> Dict[str, Union[str, bool]]:
+@mcp.tool()
+# Helper function to detect virtual environments
+def detect_venv() -> str:
     """
-    Execute a shell command and return its output.
+    Detect if a Python virtual environment exists in the current directory.
+    
+    Returns:
+        str: Path to the virtual environment if found, empty string otherwise
+    """
+    import os
+    import sys
+    
+    # Common virtual environment directory names
+    venv_names = ["venv", ".venv", "env", ".env", "virtualenv"]
+    
+    # Check current directory for common venv folders
+    current_dir = os.getcwd()
+    for venv_name in venv_names:
+        venv_path = os.path.join(current_dir, venv_name)
+        if os.path.isdir(venv_path):
+            # Verify it's a valid venv by checking for activate script
+            is_windows = sys.platform == "win32"
+            activate_path = os.path.join(
+                venv_path, 
+                "Scripts", "activate.bat" if is_windows else "bin", "activate"
+            )
+            if os.path.exists(activate_path):
+                return venv_path
+    
+    # No valid venv found
+    return ""
+
+def run_shell_with_venv(venv_path: str, command: str) -> Dict[str, Union[str, bool]]:
+    """
+    Execute a shell command within an activated Python virtual environment.
     
     Args:
-        command (str): The shell command to execute
+        venv_path (str): Path to the virtual environment directory
+        command (str): The shell command to execute in the activated environment
         
     Returns:
         Dict[str, Union[str, bool]]: Dictionary with stdout, stderr and execution status
     """
-    log_command("shell", f"command=\"{command}\"")
+    log_command("venv_shell", f"venv_path=\"{venv_path}\", command=\"{command}\"")
     
     import subprocess
+    import os
+    import sys
     
     result = {
         "stdout": "",
@@ -263,10 +298,33 @@ def shell_exec(command: str) -> Dict[str, Union[str, bool]]:
         "success": True
     }
     
+    # Validate the venv path
+    if not os.path.isdir(venv_path):
+        result["success"] = False
+        result["stderr"] = f"Error: Virtual environment directory '{venv_path}' does not exist."
+        log_command("venv_shell", f"venv_path=\"{venv_path}\", command=\"{command}\"", False)
+        return result
+    
+    # Check if it looks like a valid venv (has bin/activate or Scripts/activate.bat)
+    is_windows = sys.platform == "win32"
+    activate_script = os.path.join(venv_path, "Scripts", "activate.bat") if is_windows else os.path.join(venv_path, "bin", "activate")
+    
+    if not os.path.exists(activate_script):
+        result["success"] = False
+        result["stderr"] = f"Error: '{venv_path}' does not appear to be a valid virtual environment."
+        log_command("venv_shell", f"venv_path=\"{venv_path}\", command=\"{command}\"", False)
+        return result
+    
     try:
+        # Construct the activation command based on OS
+        if is_windows:
+            cmd = f'call "{activate_script}" && {command}'
+        else:  # Unix-like systems (Linux, macOS)
+            cmd = f'source "{activate_script}" && {command}'
+        
         # Run the command and capture output
         process = subprocess.Popen(
-            command,
+            cmd,
             shell=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -280,12 +338,12 @@ def shell_exec(command: str) -> Dict[str, Union[str, bool]]:
         result["stdout"] = stdout
         result["stderr"] = stderr
         result["success"] = process.returncode == 0
-        log_command("shell", f"command=\"{command}\"", result["success"])
+        log_command("venv_shell", f"venv_path=\"{venv_path}\", command=\"{command}\"", result["success"])
         
     except Exception as e:
         result["success"] = False
-        result["stderr"] = f"Error executing command: {str(e)}"
-        log_command("shell", f"command=\"{command}\"", False)
+        result["stderr"] = f"Error executing command in virtual environment: {str(e)}"
+        log_command("venv_shell", f"venv_path=\"{venv_path}\", command=\"{command}\"", False)
     
     return result
 
@@ -320,3 +378,59 @@ if __name__ == "__main__":
         print("\nShutting down MCP server...")
         log_command("system", "shutdown", True)
         sys.exit(0)
+@mcp.tool()
+def shell_exec(command: str, auto_env: bool = True) -> Dict[str, Union[str, bool]]:
+    """
+    Execute a shell command and return its output.
+    Automatically uses virtual environment if detected and auto_env is True.
+    
+    Args:
+        command (str): The shell command to execute
+        auto_env (bool, optional): Whether to automatically use detected environments. Defaults to True.
+        
+    Returns:
+        Dict[str, Union[str, bool]]: Dictionary with stdout, stderr and execution status
+    """
+    log_command("shell", f"command=\"{command}\", auto_env={auto_env}")
+    
+    # If auto_env is True, check for virtual environment
+    if auto_env:
+        venv_path = detect_venv()
+        if venv_path:
+            log_command("shell", f"Virtual environment detected at {venv_path}, using run_shell_with_venv")
+            return run_shell_with_venv(venv_path, command)
+    
+    # Original shell_exec implementation
+    import subprocess
+    
+    result = {
+        "stdout": "",
+        "stderr": "",
+        "success": True
+    }
+    
+    try:
+        # Run the command and capture output
+        process = subprocess.Popen(
+            command,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Get output and error streams
+        stdout, stderr = process.communicate()
+        
+        # Populate result
+        result["stdout"] = stdout
+        result["stderr"] = stderr
+        result["success"] = process.returncode == 0
+        log_command("shell", f"command=\"{command}\"", result["success"])
+        
+    except Exception as e:
+        result["success"] = False
+        result["stderr"] = f"Error executing command: {str(e)}"
+        log_command("shell", f"command=\"{command}\"", False)
+    
+    return result
