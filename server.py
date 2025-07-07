@@ -74,7 +74,7 @@ def cd(directory: str) -> dict:
             - error (str, optional): Error details (if unsuccessful)
     """
     log_command("cd", f"directory={directory}")
-    
+
     # Get the current directory before any changes
     current_directory = os.path.basename(os.getcwd())
 
@@ -242,8 +242,6 @@ def run_file(filename: str) -> Dict[str, Union[str, bool]]:
         
     return result
 
-@mcp.tool()
-@mcp.tool()
 # Helper function to detect virtual environments
 def detect_venv() -> str:
     """
@@ -275,7 +273,7 @@ def detect_venv() -> str:
     # No valid venv found
     return ""
 
-def run_shell_with_venv(venv_path: str, command: str) -> Dict[str, Union[str, bool]]:
+def shell_exec_with_venv(venv_path: str, command: str) -> Dict[str, Union[str, bool]]:
     """
     Execute a shell command within an activated Python virtual environment.
     
@@ -307,8 +305,11 @@ def run_shell_with_venv(venv_path: str, command: str) -> Dict[str, Union[str, bo
     
     # Check if it looks like a valid venv (has bin/activate or Scripts/activate.bat)
     is_windows = sys.platform == "win32"
-    activate_script = os.path.join(venv_path, "Scripts", "activate.bat") if is_windows else os.path.join(venv_path, "bin", "activate")
-    
+    if is_windows:
+        activate_script = os.path.join(venv_path, "Scripts", "activate.bat")
+    else:
+        activate_script = os.path.join(venv_path, "bin", "activate")
+
     if not os.path.exists(activate_script):
         result["success"] = False
         result["stderr"] = f"Error: '{venv_path}' does not appear to be a valid virtual environment."
@@ -347,37 +348,6 @@ def run_shell_with_venv(venv_path: str, command: str) -> Dict[str, Union[str, bo
     
     return result
 
-def initialize_workspace():
-    """Initialize the workspace by setting an active project"""
-    log_command("system", "initialize_workspace")
-    
-    # Get list of available projects
-    projects = list_projects()
-    
-    # If no projects exist, the default directory should already exist from entrypoint
-    if not projects:
-        print("No projects found. This should not happen as entrypoint creates default.")
-        # We won't create it here as the entrypoint should have done this with proper permissions
-        return
-        
-    # Use the first available project
-    first_project = projects[0]
-    os.chdir(os.path.join(WORKDIR, first_project))
-    print(f"Setting '{first_project}' as the active project")
-
-if __name__ == "__main__":
-    try:
-        # Log startup information
-        print(f"Command logging is {'ENABLED' if LOG_COMMANDS else 'DISABLED'}")
-        
-        initialize_workspace()
-        print(f"Starting MCP server on {HOST}:{PORT}")
-        print(f"Active project: {get_active_project()}")
-        mcp.run(transport="streamable-http")
-    except KeyboardInterrupt:
-        print("\nShutting down MCP server...")
-        log_command("system", "shutdown", True)
-        sys.exit(0)
 @mcp.tool()
 def shell_exec(command: str, auto_env: bool = True) -> Dict[str, Union[str, bool]]:
     """
@@ -397,8 +367,8 @@ def shell_exec(command: str, auto_env: bool = True) -> Dict[str, Union[str, bool
     if auto_env:
         venv_path = detect_venv()
         if venv_path:
-            log_command("shell", f"Virtual environment detected at {venv_path}, using run_shell_with_venv")
-            return run_shell_with_venv(venv_path, command)
+            log_command("shell", f"Virtual environment detected at {venv_path}, using shell_exec_with_venv")
+            return shell_with_venv(venv_path, command)
     
     # Original shell_exec implementation
     import subprocess
@@ -434,3 +404,35 @@ def shell_exec(command: str, auto_env: bool = True) -> Dict[str, Union[str, bool
         log_command("shell", f"command=\"{command}\"", False)
     
     return result
+
+def initialize_workspace():
+    """Initialize the workspace by setting an active project"""
+    log_command("system", "initialize_workspace")
+
+    # Get list of available projects
+    projects = list_projects()
+
+    # If no projects exist, the default directory should already exist from entrypoint
+    if not projects:
+        print("No projects found. This should not happen as entrypoint creates default.")
+        # We won't create it here as the entrypoint should have done this with proper permissions
+        return
+
+    # Use the first available project
+    first_project = projects[0]
+    os.chdir(os.path.join(WORKDIR, first_project))
+    print(f"Setting '{first_project}' as the active project")
+
+if __name__ == "__main__":
+    try:
+        # Log startup information
+        print(f"Command logging is {'ENABLED' if LOG_COMMANDS else 'DISABLED'}")
+
+        initialize_workspace()
+        print(f"Starting MCP server on {HOST}:{PORT}")
+        print(f"Active project: {get_active_project()}")
+        mcp.run(transport="streamable-http")
+    except KeyboardInterrupt:
+        print("\nShutting down MCP server...")
+        log_command("system", "shutdown", True)
+        sys.exit(0)
