@@ -70,52 +70,70 @@ def cd(directory: str) -> dict:
         dict: A dictionary containing:
             - success (bool): Whether the operation was successful
             - message (str): An informative message about the result
-            - current_directory (str): The name of the current directory
+            - current_directory (str): The current directory path
             - error (str, optional): Error details (if unsuccessful)
     """
     log_command("cd", f"directory={directory}")
 
     # Get the current directory before any changes
-    current_directory = os.path.basename(os.getcwd())
+    current_dir = os.getcwd()
 
     try:
-        directory_path = os.path.join(WORKDIR, directory)
-        if not os.path.isdir(directory_path):
+        # Handle absolute paths
+        if os.path.isabs(directory):
+            target_path = directory
+            # Ensure the path is within WORKDIR for security
+            if not target_path.startswith(WORKDIR):
+                result = {
+                    "success": False,
+                    "message": f"Please provide either a relative path or a path in {WORKDIR}",
+                    "current_directory": current_dir,
+                    "error": "Unauthorized Path"
+                }
+                log_command("cd", f"directory={directory}", False)
+                return result
+        else:
+            # Handle relative paths by resolving against current directory
+            target_path = os.path.abspath(os.path.join(current_dir, directory))
+            # Ensure the path is within WORKDIR for security
+            if not target_path.startswith(WORKDIR):
+                result = {
+                    "success": False,
+                    "message": f"The resulting path would be outside {WORKDIR}",
+                    "current_directory": current_dir,
+                    "error": "Unauthorized Path"
+                }
+                log_command("cd", f"directory={directory}", False)
+                return result
+
+        # Check if directory exists
+        if not os.path.isdir(target_path):
             result = {
                 "success": False,
                 "message": f"Directory '{directory}' does not exist",
-                "current_directory": current_directory,
+                "current_directory": current_dir,
                 "error": "FileNotFoundError"
             }
             log_command("cd", f"directory={directory}", False)
             return result
 
-        if not directory_path.startswith(WORKDIR):
-            result = {
-                "success": False,
-                "message": f"Please provide either a relative path or a path in {WORKDIR}",
-                "current_directory": current_directory,
-                "error": "Unauthorized Path"
-            }
-            log_command("cd", f"directory={directory}", False)
-            return result
-
-        os.chdir(directory_path)
+        # Change to the directory
+        os.chdir(target_path)
         result = {
             "success": True,
             "message": f"Successfully changed to directory '{directory}'",
-            "current_directory": directory
+            "current_directory": target_path
         }
         log_command("cd", f"directory={directory}", True)
         return result
     except Exception as e:
         # Get the current directory again after the exception
         # (it might have changed during the attempt)
-        current_directory = os.path.basename(os.getcwd())
+        current_dir = os.getcwd()
         result = {
             "success": False,
             "message": f"Failed to change to directory '{directory}'",
-            "current_directory": current_directory,
+            "current_directory": current_dir,
             "error": str(e)
         }
         log_command("cd", f"directory={directory}", False)
