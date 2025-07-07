@@ -263,10 +263,10 @@ def detect_venv() -> str:
         if os.path.isdir(venv_path):
             # Verify it's a valid venv by checking for activate script
             is_windows = sys.platform == "win32"
-            activate_path = os.path.join(
-                venv_path, 
-                "Scripts", "activate.bat" if is_windows else "bin", "activate"
-            )
+            if is_windows:
+                activate_path = os.path.join(venv_path, "Scripts", "activate.bat")
+            else:
+                activate_path = os.path.join(venv_path, "bin", "activate")
             if os.path.exists(activate_path):
                 return venv_path
     
@@ -321,7 +321,7 @@ def shell_exec_with_venv(venv_path: str, command: str) -> Dict[str, Union[str, b
         if is_windows:
             cmd = f'call "{activate_script}" && {command}'
         else:  # Unix-like systems (Linux, macOS)
-            cmd = f'source "{activate_script}" && {command}'
+            cmd = f'. "{activate_script}" && {command}'
         
         # Run the command and capture output
         process = subprocess.Popen(
