@@ -1,11 +1,15 @@
 import io
 import os
+import base64
+import mimetypes
 import sys
 import datetime
 from contextlib import redirect_stdout, redirect_stderr
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.utilities.types import Image
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Annotated
+from pydantic import Field
 
 # Get configuration from environment variables with defaults
 WORKDIR = os.environ.get("WORKDIR", str(Path.home()))
@@ -138,6 +142,66 @@ def cd(directory: str) -> dict:
         }
         log_command("cd", f"directory={directory}", False)
         return result
+
+@mcp.tool()
+def get_image(
+    path: Annotated[str, Field(description="Path to the image file. If relative, resolves from current directory")]
+) -> dict:
+    """
+    Get an image from the specified path.
+
+    Returns the image as base64 data with appropriate metadata.
+    Relative paths are resolved from the current working directory.
+    """
+    # Convert relative path to absolute path
+    abs_path = os.path.abspath(path)
+
+    # Check if the path exists
+    if not os.path.exists(abs_path):
+        return {"success": False, "error": f"Path '{path}' not found"}
+
+    # Check if it's a file
+    if not os.path.isfile(abs_path):
+        return {"success": False, "error": f"Path '{path}' is not a file"}
+
+    try:
+        # Get file size in bytes
+        file_size = os.path.getsize(abs_path)
+
+        # Get the MIME type
+        mime_type, _ = mimetypes.guess_type(abs_path)
+        if not mime_type or not mime_type.startswith('image/'):
+            return {"success": False, "error": f"File '{path}' is not a recognized image format"}
+
+        # If file is larger than ~1MB, compress it
+        if file_size > 1000000:
+            buffer = io.BytesIO()
+
+            # Open and compress the image
+            img = Image.open(abs_path)
+            img.convert("RGB").save(buffer, format="JPEG", quality=60, optimize=True)
+
+            # Use the compressed data
+            img_data = buffer.getvalue()
+            mime_type = "image/jpeg"  # Update mime type since we converted to JPEG
+        else:
+            # For smaller images, just read the file directly
+            with open(abs_path, 'rb') as img_file:
+                img_data = img_file.read()
+
+        # Encode the image as base64
+        img_base64 = base64.b64encode(img_data).decode('utf-8')
+
+        # Determine format from the file extension
+        format = os.path.splitext(abs_path)[1].lower().lstrip('.')
+        if format in ('jpg', 'jpeg'):
+            format = 'jpeg'
+
+        # Return the Image object directly
+        return Image(data=img_data, format=format)
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 @mcp.tool()
 def run_code(code: str) -> Dict[str, Union[str, bool]]:
@@ -430,16 +494,8 @@ def initialize_workspace():
     # Get list of available projects
     projects = list_projects()
 
-    # If no projects exist, the default directory should already exist from entrypoint
-    if not projects:
-        print("No projects found. This should not happen as entrypoint creates default.")
-        # We won't create it here as the entrypoint should have done this with proper permissions
-        return
-
-    # Use the first available project
-    first_project = projects[0]
-    os.chdir(os.path.join(WORKDIR, first_project))
-    print(f"Setting '{first_project}' as the active project")
+    os.chdir(WORKDIR)
+    print(f"Setting '{WORKDIR}' as the active project")
 
 if __name__ == "__main__":
     try:
