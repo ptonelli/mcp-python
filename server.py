@@ -37,7 +37,7 @@ def log_command(command_type, command_data, result_success=None):
         sys.stdout.flush()  # Ensure logs are flushed immediately
 
 # Create an MCP server with environment variable configuration
-mcp = FastMCP("python", stateless_http=True, host=HOST, port=PORT, path="/python")
+mcp = FastMCP("shell", stateless_http=True, host=HOST, port=PORT, path="/shell")
 
 @mcp.resource("projects://")
 def list_projects() -> List[str]:
