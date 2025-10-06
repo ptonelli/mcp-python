@@ -4,6 +4,8 @@ import base64
 import mimetypes
 import sys
 import datetime
+import subprocess
+import shutil
 from contextlib import redirect_stdout, redirect_stderr
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.utilities.types import Image
@@ -22,7 +24,7 @@ LOG_COMMANDS = os.environ.get("MCP_LOG_COMMANDS", "0").lower() in ("1", "true", 
 
 def log_command(command_type, command_data, result_success=None):
     """Log command execution to stdout if logging is enabled
-    
+
     Args:
         command_type (str): Type of command (e.g., 'shell', 'python')
         command_data (str): The actual command that was executed
@@ -218,7 +220,7 @@ def run_code(code: str) -> Dict[str, Union[str, bool]]:
     code_preview = (code[:100] + '...') if len(code) > 100 else code
     code_preview = code_preview.replace('\n', ' ').strip()
     log_command("python", f"code=\"{code_preview}\"")
-    
+
     stdout_buffer = io.StringIO()
     stderr_buffer = io.StringIO()
 
@@ -259,37 +261,37 @@ def run_code(code: str) -> Dict[str, Union[str, bool]]:
 def run_file(filename: str) -> Dict[str, Union[str, bool]]:
     """
     Execute a Python file and capture stdout and stderr.
-    
+
     Args:
         filename (str): Name of the Python file to execute in the active project
-        
+
     Returns:
         Dict[str, Union[str, bool]]: Dictionary with stdout, stderr and execution status
     """
     log_command("python_file", f"filename={filename}")
-    
+
     result = {
         "stdout": "",
         "stderr": "",
         "success": True
     }
-    
+
     file_path = os.path.join(os.getcwd(), filename)
-    
+
     # Check if file exists
     if not os.path.exists(file_path):
         result["success"] = False
         result["stderr"] = f"Error: File '{filename}' does not exist."
         log_command("python_file", f"filename={filename}", False)
         return result
-        
+
     # Check if it's a file (not a directory)
     if not os.path.isfile(file_path):
         result["success"] = False
         result["stderr"] = f"Error: '{filename}' is not a file."
         log_command("python_file", f"filename={filename}", False)
         return result
-        
+
     # Create a safe globals dictionary similar to run_code
     safe_globals = {
         "__builtins__": {
@@ -299,45 +301,43 @@ def run_file(filename: str) -> Dict[str, Union[str, bool]]:
             if name not in ['open', 'exec', 'eval', '__import__']
         }
     }
-    
+
     stdout_buffer = io.StringIO()
     stderr_buffer = io.StringIO()
-    
+
     try:
         # Read the file content
         with open(file_path, 'r') as f:
             code = f.read()
-            
+
         # Redirect both stdout and stderr to our buffers
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
             exec(code, safe_globals, {})
-        
+
         # Get the captured output
         result["stdout"] = stdout_buffer.getvalue()
         result["stderr"] = stderr_buffer.getvalue()
         log_command("python_file", f"filename={filename}", True)
-        
+
     except Exception as e:
         result["success"] = False
         result["stderr"] = f"{stderr_buffer.getvalue()}\nException: {str(e)}"
         log_command("python_file", f"filename={filename}", False)
-        
+
     return result
 
 # Helper function to detect virtual environments
 def detect_venv() -> str:
     """
     Detect if a Python virtual environment exists in the current directory.
-    
+
     Returns:
         str: Path to the virtual environment if found, empty string otherwise
     """
-    import os
-    import sys
-    
+
     # Common virtual environment directory names
     venv_names = ["venv", ".venv", "env", ".env", "virtualenv"]
-    
+
     # Check current directory for common venv folders
     current_dir = os.getcwd()
     for venv_name in venv_names:
@@ -351,40 +351,37 @@ def detect_venv() -> str:
                 activate_path = os.path.join(venv_path, "bin", "activate")
             if os.path.exists(activate_path):
                 return venv_path
-    
+
     # No valid venv found
     return ""
 
 def shell_exec_with_venv(venv_path: str, command: str) -> Dict[str, Union[str, bool]]:
     """
     Execute a shell command within an activated Python virtual environment.
-    
+
     Args:
         venv_path (str): Path to the virtual environment directory
         command (str): The shell command to execute in the activated environment
-        
+
     Returns:
         Dict[str, Union[str, bool]]: Dictionary with stdout, stderr and execution status
     """
     log_command("venv_shell", f"venv_path=\"{venv_path}\", command=\"{command}\"")
-    
-    import subprocess
-    import os
-    import sys
-    
+
+
     result = {
         "stdout": "",
         "stderr": "",
         "success": True
     }
-    
+
     # Validate the venv path
     if not os.path.isdir(venv_path):
         result["success"] = False
         result["stderr"] = f"Error: Virtual environment directory '{venv_path}' does not exist."
         log_command("venv_shell", f"venv_path=\"{venv_path}\", command=\"{command}\"", False)
         return result
-    
+
     # Check if it looks like a valid venv (has bin/activate or Scripts/activate.bat)
     is_windows = sys.platform == "win32"
     if is_windows:
@@ -397,14 +394,14 @@ def shell_exec_with_venv(venv_path: str, command: str) -> Dict[str, Union[str, b
         result["stderr"] = f"Error: '{venv_path}' does not appear to be a valid virtual environment."
         log_command("venv_shell", f"venv_path=\"{venv_path}\", command=\"{command}\"", False)
         return result
-    
+
     try:
         # Construct the activation command based on OS
         if is_windows:
             cmd = f'call "{activate_script}" && {command}'
         else:  # Unix-like systems (Linux, macOS)
             cmd = f'. "{activate_script}" && {command}'
-        
+
         # Run the command and capture output
         process = subprocess.Popen(
             cmd,
@@ -413,21 +410,21 @@ def shell_exec_with_venv(venv_path: str, command: str) -> Dict[str, Union[str, b
             stderr=subprocess.PIPE,
             text=True
         )
-        
+
         # Get output and error streams
         stdout, stderr = process.communicate()
-        
+
         # Populate result
         result["stdout"] = stdout
         result["stderr"] = stderr
         result["success"] = process.returncode == 0
         log_command("venv_shell", f"venv_path=\"{venv_path}\", command=\"{command}\"", result["success"])
-        
+
     except Exception as e:
         result["success"] = False
         result["stderr"] = f"Error executing command in virtual environment: {str(e)}"
         log_command("venv_shell", f"venv_path=\"{venv_path}\", command=\"{command}\"", False)
-    
+
     return result
 
 @mcp.tool()
@@ -435,32 +432,31 @@ def shell_exec(command: str, auto_env: bool = True) -> Dict[str, Union[str, bool
     """
     Execute a shell command and return its output.
     Automatically uses virtual environment if detected and auto_env is True.
-    
+
     Args:
         command (str): The shell command to execute
         auto_env (bool, optional): Whether to automatically use detected environments. Defaults to True.
-        
+
     Returns:
         Dict[str, Union[str, bool]]: Dictionary with stdout, stderr and execution status
     """
     log_command("shell", f"command=\"{command}\", auto_env={auto_env}")
-    
+
     # If auto_env is True, check for virtual environment
     if auto_env:
         venv_path = detect_venv()
         if venv_path:
             log_command("shell", f"Virtual environment detected at {venv_path}, using shell_exec_with_venv")
             return shell_exec_with_venv(venv_path, command)
-    
+
     # Original shell_exec implementation
-    import subprocess
-    
+
     result = {
         "stdout": "",
         "stderr": "",
         "success": True
     }
-    
+
     try:
         # Run the command and capture output
         process = subprocess.Popen(
@@ -470,22 +466,107 @@ def shell_exec(command: str, auto_env: bool = True) -> Dict[str, Union[str, bool
             stderr=subprocess.PIPE,
             text=True
         )
-        
+
         # Get output and error streams
         stdout, stderr = process.communicate()
-        
+
         # Populate result
         result["stdout"] = stdout
         result["stderr"] = stderr
         result["success"] = process.returncode == 0
         log_command("shell", f"command=\"{command}\"", result["success"])
-        
+
     except Exception as e:
         result["success"] = False
         result["stderr"] = f"Error executing command: {str(e)}"
         log_command("shell", f"command=\"{command}\"", False)
-    
+
     return result
+
+@mcp.tool()
+def clone_repo(
+    url: Annotated[str, Field(description="Git repository URL to clone")],
+    reset: Annotated[bool, Field(description="If True, delete any existing directory with the same repo name and re-clone. If False, just switch to the existing directory if present.")]=False,
+) -> dict:
+    """
+    Clone a Git repository into WORKDIR and switch to its directory.
+
+    - Always starts from WORKDIR.
+    - Derives repo name from URL (last segment, strips .git).
+    - If directory exists:
+        - reset=False: just cd into it and return a note.
+        - reset=True: delete and clone again.
+    - If directory doesn't exist: clone and cd into it.
+    """
+
+    log_command("git_clone", f'url="{url}", reset={reset}')
+
+    try:
+        # Derive repo name - handle both SSH and HTTPS formats
+        if ":" in url and "@" in url and not url.startswith("http"):
+            # SSH format: git@host:path or git@host:user/repo
+            tail = url.split(":")[-1].split("/")[-1]
+        else:
+            # HTTPS/file format
+            tail = url.rstrip("/").split("/")[-1]
+        repo_name = tail[:-4] if tail.endswith(".git") else tail
+
+        # Very light sanity check
+        if not repo_name or repo_name in (".", "..") or os.sep in repo_name or (os.altsep and os.altsep in repo_name):
+            msg = f"Invalid repository name derived from URL: '{repo_name}'"
+            log_command("git_clone", msg, False)
+            return {"success": False, "message": msg, "current_directory": os.getcwd()}
+
+        # Work from root (WORKDIR)
+        os.chdir(WORKDIR)
+        target = os.path.join(WORKDIR, repo_name)
+
+        # If it exists and we don’t want to reset: just switch to it
+        if os.path.isdir(target) and not reset:
+            os.chdir(target)
+            msg = f"Repository '{repo_name}' already exists. Switched to existing directory."
+            log_command("git_clone", msg, True)
+            return {"success": True, "message": msg, "current_directory": os.getcwd()}
+
+        # If it exists and reset=True, remove it
+        if os.path.isdir(target) and reset:
+            try:
+                shutil.rmtree(target)
+            except Exception as e:
+                msg = f"Failed to remove '{target}': {e}"
+                log_command("git_clone", msg, False)
+                return {"success": False, "message": msg, "current_directory": os.getcwd(), "stderr": str(e)}
+
+        # Clone (either fresh or after reset)
+        r = subprocess.run(["git", "clone", url, repo_name], capture_output=True, text=True)
+        if r.returncode != 0:
+            msg = f"git clone failed with exit code {r.returncode}"
+            log_command("git_clone", msg, False)
+            # Stay in WORKDIR on failure
+            return {
+                "success": False,
+                "message": msg,
+                "current_directory": os.getcwd(),
+                "stdout": r.stdout,
+                "stderr": r.stderr,
+            }
+
+        # Switch to the cloned repo
+        os.chdir(target)
+        msg = ("Existing directory was replaced. " if reset else "") + f"Cloned '{url}' into '{target}'."
+        log_command("git_clone", msg, True)
+        return {
+            "success": True,
+            "message": msg,
+            "current_directory": os.getcwd(),
+            "stdout": r.stdout,
+            "stderr": r.stderr,
+        }
+
+    except Exception as e:
+        msg = f"Unexpected error during clone: {e}"
+        log_command("git_clone", msg, False)
+        return {"success": False, "message": msg, "current_directory": os.getcwd(), "stderr": str(e)}
 
 def initialize_workspace():
     """Initialize the workspace by setting an active project"""
