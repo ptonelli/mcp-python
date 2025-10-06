@@ -418,8 +418,14 @@ def clone_repo(
                 log_command("git_clone", msg, False)
                 return {"success": False, "message": msg, "current_directory": os.getcwd(), "stderr": str(e)}
 
+        # always have an url which ends with .git (gitolite quirk fix)
+        if not url.endswith(".git"):
+            url = url + ".git"
+
         # Clone (either fresh or after reset)
-        r = subprocess.run(["git", "clone", url, repo_name], capture_output=True, text=True)
+        env = os.environ.copy()
+        env['GIT_SSH_COMMAND'] = 'ssh -o StrictHostKeyChecking=no'
+        r = subprocess.run(["git", "clone", url, repo_name], capture_output=True, text=True, env=env)
         if r.returncode != 0:
             msg = f"git clone failed with exit code {r.returncode}"
             log_command("git_clone", msg, False)
