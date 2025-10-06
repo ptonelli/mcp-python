@@ -1,6 +1,7 @@
 import io
 import os
 import base64
+import difflib
 import mimetypes
 import sys
 import datetime
@@ -449,7 +450,7 @@ def clone_repo(
         return {"success": False, "message": msg, "current_directory": os.getcwd(), "stderr": str(e)}
 
 @mcp.tool()
-def read_file_lines(
+def read_file(
     file_path: str,
     start_line: int = 1,
     end_line: Optional[int] = None,
@@ -594,6 +595,110 @@ def read_file_lines(
         result["message"] = f"Unexpected error reading file '{file_path}': {str(e)}"
         log_command("read_file", f"file_path='{file_path}'", False)
         return result
+
+@mcp.tool()
+def replace_lines(
+    file_path: str,
+    start_line: int,
+    new_content: str,
+    end_line: Optional[int] = None,
+    dry_run: bool = False
+) -> dict:
+    """
+    Replace lines in a file by line number range, or insert if end_line is not provided.
+
+    Args:
+        file_path (str): Path to the file
+        start_line (int): Starting line number (1-based)
+        new_content (str): New content to replace/insert
+        end_line (int, optional): Ending line number (1-based, inclusive). If None, inserts at start_line
+        dry_run (bool): If True, shows what would change without modifying the file
+
+    Returns:
+        dict: Success status, message, and unified diff showing changes
+    """
+    try:
+        # Read the original file
+        with open(file_path, 'r', encoding='utf-8') as f:
+            original_lines = f.readlines()
+
+        total_lines = len(original_lines)
+
+        # Validate line numbers
+        if start_line < 1 or start_line > total_lines + 1:
+            return {
+                "success": False,
+                "error": f"start_line {start_line} is out of range (file has {total_lines} lines)"
+            }
+
+        # Convert new_content to list of lines
+        new_lines = new_content.split('\n')
+        new_lines = [line + '\n' for line in new_lines[:-1]] + [new_lines[-1]]
+        if new_content.endswith('\n'):
+            new_lines[-1] += '\n'
+
+        # Convert to 0-based indexing
+        start_idx = start_line - 1
+
+        if end_line is None:
+            # INSERT mode
+            operation = "insert"
+            end_idx = start_idx
+        else:
+            # REPLACE mode
+            if end_line < start_line or end_line > total_lines:
+                return {
+                    "success": False,
+                    "error": f"end_line {end_line} is invalid (must be >= {start_line} and <= {total_lines})"
+                }
+            operation = "replace"
+            end_idx = end_line
+
+        # Create the modified version
+        modified_lines = original_lines.copy()
+        modified_lines[start_idx:end_idx] = new_lines
+
+        # Generate unified diff (always show what changed/would change)
+        diff_lines = list(difflib.unified_diff(
+            original_lines,
+            modified_lines,
+            fromfile=f"{file_path} (before)",
+            tofile=f"{file_path} (after)",
+            lineterm=''
+        ))
+
+        # Remove the file headers and format nicely
+        if len(diff_lines) > 2:
+            diff_output = '\n'.join(diff_lines[2:])  # Skip the --- and +++ lines
+        else:
+            diff_output = "No changes detected"
+
+        if dry_run:
+            # DRY RUN - don't modify the file
+            return {
+                "success": True,
+                "message": f"[DRY RUN] Would {operation} at line {start_line}" + (f"-{end_line}" if end_line else ""),
+                "diff": diff_output,
+                "dry_run": True
+            }
+        else:
+            # ACTUALLY MODIFY the file
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.writelines(modified_lines)
+
+            return {
+                "success": True,
+                "message": f"Successfully {operation}ed at line {start_line}" + (f"-{end_line}" if end_line else ""),
+                "diff": diff_output,
+                "dry_run": False
+            }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Error processing {file_path}",
+            "error": str(e)
+        }
 
 def initialize_workspace():
     """Initialize the workspace by setting an active project"""
