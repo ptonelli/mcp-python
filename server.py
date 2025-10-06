@@ -568,6 +568,153 @@ def clone_repo(
         log_command("git_clone", msg, False)
         return {"success": False, "message": msg, "current_directory": os.getcwd(), "stderr": str(e)}
 
+@mcp.tool()
+def read_file_lines(
+    file_path: str,
+    start_line: int = 1,
+    end_line: Optional[int] = None,
+    show_line_numbers: bool = False
+) -> dict:
+    """
+    Read specific lines from a file.
+
+    Args:
+        file_path (str): Path to the file to read (relative paths resolved from current directory)
+        start_line (int): Starting line number (1-based indexing). Defaults to 1.
+        end_line (int, optional): Ending line number (inclusive). If None, reads to end of file.
+        show_line_numbers (bool): Whether to prepend line numbers to each line. Defaults to False.
+
+    Returns:
+        dict: A dictionary containing:
+            - success (bool): Whether the operation was successful
+            - message (str): An informative message about the result
+            - content (str): The actual lines read from the file
+            - total_lines (int): Total number of lines in the file
+            - lines_read (int): Number of lines actually returned
+            - start_line (int): The starting line number used
+            - end_line (int): The ending line number used
+            - show_line_numbers (bool): Whether line numbers were included
+            - error (str, optional): Error details (if unsuccessful)
+    """
+    log_command("read_file", f"file_path='{file_path}', start_line={start_line}, end_line={end_line}, show_line_numbers={show_line_numbers}")
+
+    # Convert relative path to absolute path
+    abs_path = os.path.abspath(file_path)
+
+    result = {
+        "success": False,
+        "message": "",
+        "content": "",
+        "total_lines": 0,
+        "lines_read": 0,
+        "start_line": start_line,
+        "end_line": end_line,
+        "show_line_numbers": show_line_numbers
+    }
+
+    # Validate start_line
+    if start_line < 1:
+        result["error"] = "start_line must be >= 1"
+        result["message"] = f"Invalid start_line: {start_line}. Line numbers are 1-based."
+        log_command("read_file", f"file_path='{file_path}'", False)
+        return result
+
+    # Validate end_line if provided
+    if end_line is not None and end_line < start_line:
+        result["error"] = "end_line must be >= start_line"
+        result["message"] = f"Invalid range: start_line={start_line}, end_line={end_line}"
+        log_command("read_file", f"file_path='{file_path}'", False)
+        return result
+
+    # Check if file exists
+    if not os.path.exists(abs_path):
+        result["error"] = "FileNotFoundError"
+        result["message"] = f"File '{file_path}' does not exist"
+        log_command("read_file", f"file_path='{file_path}'", False)
+        return result
+
+    # Check if it's a file (not a directory)
+    if not os.path.isfile(abs_path):
+        result["error"] = "NotAFileError"
+        result["message"] = f"Path '{file_path}' is not a file"
+        log_command("read_file", f"file_path='{file_path}'", False)
+        return result
+
+    try:
+        with open(abs_path, 'r', encoding='utf-8') as f:
+            all_lines = f.readlines()
+
+        total_lines = len(all_lines)
+        result["total_lines"] = total_lines
+
+        # Handle empty file
+        if total_lines == 0:
+            result["success"] = True
+            result["message"] = "File is empty"
+            result["content"] = ""
+            result["lines_read"] = 0
+            log_command("read_file", f"file_path='{file_path}'", True)
+            return result
+
+        # Adjust end_line if not specified or beyond file length
+        actual_end_line = min(end_line or total_lines, total_lines)
+        result["end_line"] = actual_end_line
+
+        # Check if start_line is beyond file length
+        if start_line > total_lines:
+            result["success"] = True
+            result["message"] = f"start_line ({start_line}) is beyond file length ({total_lines}). No lines returned."
+            result["content"] = ""
+            result["lines_read"] = 0
+            log_command("read_file", f"file_path='{file_path}'", True)
+            return result
+
+        # Extract the requested lines (convert to 0-based indexing)
+        selected_lines = all_lines[start_line-1:actual_end_line]
+
+        # Generate content with or without line numbers
+        if show_line_numbers:
+            numbered_lines = []
+            for i, line in enumerate(selected_lines, start=start_line):
+                # Format line numbers with consistent width for better alignment
+                line_num_width = len(str(actual_end_line))
+                numbered_lines.append(f"{i:>{line_num_width}}: {line}")
+            content = ''.join(numbered_lines)
+        else:
+            content = ''.join(selected_lines)
+
+        result["success"] = True
+        result["content"] = content
+        result["lines_read"] = len(selected_lines)
+
+        # Update message to indicate line numbering
+        line_nums_msg = " (with line numbers)" if show_line_numbers else ""
+        if start_line == 1 and actual_end_line == total_lines:
+            result["message"] = f"Read entire file ({total_lines} lines){line_nums_msg}"
+        else:
+            result["message"] = f"Read lines {start_line}-{actual_end_line} ({len(selected_lines)} lines) from file with {total_lines} total lines{line_nums_msg}"
+
+        log_command("read_file", f"file_path='{file_path}'", True)
+        return result
+
+    except UnicodeDecodeError as e:
+        result["error"] = "UnicodeDecodeError"
+        result["message"] = f"Cannot read file '{file_path}' as UTF-8 text: {str(e)}"
+        log_command("read_file", f"file_path='{file_path}'", False)
+        return result
+
+    except PermissionError as e:
+        result["error"] = "PermissionError"
+        result["message"] = f"Permission denied reading file '{file_path}': {str(e)}"
+        log_command("read_file", f"file_path='{file_path}'", False)
+        return result
+
+    except Exception as e:
+        result["error"] = str(e)
+        result["message"] = f"Unexpected error reading file '{file_path}': {str(e)}"
+        log_command("read_file", f"file_path='{file_path}'", False)
+        return result
+
 def initialize_workspace():
     """Initialize the workspace by setting an active project"""
     log_command("system", "initialize_workspace")
